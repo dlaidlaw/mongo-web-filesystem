@@ -4,7 +4,9 @@ import javax.servlet.http.HttpServletRequest;
 
 import com.mongodb.BasicDBObject
 import com.mongodb.DB;
+import com.mongodb.DBCollection;
 import com.mongodb.DBObject;
+import com.mongodb.WriteConcern;
 import com.mongodb.gridfs.GridFS;
 import com.mongodb.gridfs.GridFSFile;
 import com.mongodb.gridfs.GridFSInputFile;
@@ -13,7 +15,7 @@ class FilesystemService {
 	DB db
 	String bucket = "fs"
 	String root = ""
-	
+		
     def insertFile(HttpServletRequest request, Map<String, Object> params, long version) {
 		GridFS gridFS = new GridFS(db, bucket)
 		String filename = makeGridFSFilename(params.name)
@@ -33,6 +35,23 @@ class FilesystemService {
 		gridFile.save();
 		return gridFile;
     }
+	
+	def getNextFileVersion(String fileName) {
+		DBCollection coll = db.getCollection("${bucket}.versions")
+		DBObject query = new BasicDBObject("_id", fileName)
+		DBObject sort = null
+		DBObject fields = null
+		DBObject update = new BasicDBObject("\$inc", new BasicDBObject("version", new Long(1)))
+//		findAndModify(com.mongodb.DBObject, com.mongodb.DBObject, com.mongodb.DBObject, boolean, com.mongodb.DBObject, boolean, boolean)
+//		def result = coll.findAndModify(query, fields, sort, Boolean.FALSE, update, Boolean.TRUE, Boolean.TRUE)
+		def result = coll.findAndModify(query, update)
+		if (result == null) {
+			query.put("version", new Long(1))
+			coll.insert(query, WriteConcern.SAFE)
+			return 0L
+		}
+		return result.version;
+	}
 	
 	String makeGridFSFilename(String name) {
 		String filename = name

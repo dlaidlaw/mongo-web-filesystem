@@ -25,7 +25,8 @@ class FilesystemController {
 	
 	def save() {
 		validateInsert()
-		GridFSFile file = fs.insertFile(request, params, 1L)
+		long version = fs.getNextFileVersion(params.name)
+		GridFSFile file = fs.insertFile(request, params, version)
 		render file.id
 	}
 	
