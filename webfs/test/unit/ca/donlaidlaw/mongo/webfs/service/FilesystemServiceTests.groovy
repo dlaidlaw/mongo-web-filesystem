@@ -10,7 +10,7 @@ import org.junit.*
  */
 @TestFor(FilesystemService)
 class FilesystemServiceTests {
-
+	// http://localhost:8080/webfs/v1.0/ACME?name=TenLines&owner=somedb://host:port/dbname/tablename/id&tags=text&tags=count&uploadedBy=Don
     void testSomething() {
         fail "Implement me"
     }
