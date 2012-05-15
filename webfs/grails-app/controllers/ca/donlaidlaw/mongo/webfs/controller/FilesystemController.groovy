@@ -1,5 +1,7 @@
 package ca.donlaidlaw.mongo.webfs.controller
 
+import javax.activation.MimeType;
+
 import grails.converters.JSON;
 import grails.converters.XML;
 import ca.donlaidlaw.mongo.webfs.DocumentNotFoundException;
@@ -19,6 +21,7 @@ class FilesystemController {
 			throw new ValidationException("The tenant is required.")
 		}
 		if (!params.id) {
+			// Need to implement this method in the service
 			def documents = fs.findDocuments(request, params)
 			withFormat {
 				xml { render documents as XML }
@@ -39,12 +42,28 @@ class FilesystemController {
 		
 	}
 	
+	/**
+	 * This is a PUT request. We only update the metadata, not the file content.
+	 * @return the file id if the file was found.
+	 */
 	def update() {
-		response.sendError response.SC_NOT_IMPLEMENTED, "Update not implemented."
+		validateFields([FilesystemService.TENANT, FilesystemService.ID], params)
+		params[FilesystemService.MODIFIED_BY] = request.getUserPrincipal()?.getName()
+		GridFSFile file = fs.updateFile(params)
+		if (file == null) {
+			throw new DocumentNotFoundException("Document ID ${params[FilesystemService.ID]} not found.")
+		}
+		render (text: file.getId().toString(), contentType: "text/plain", encoding: "UTF8")
 	}
 	
 	def delete() {
-		response.sendError response.SC_NOT_IMPLEMENTED, "Delete not implemented."
+		validateFields([FilesystemService.TENANT, FilesystemService.ID], params)
+		params[FilesystemService.MODIFIED_BY] = request.getUserPrincipal()?.getName()
+		GridFSFile file = fs.deleteFile(params)
+		if (file == null) {
+			throw new DocumentNotFoundException("Document ID ${params[FilesystemService.ID]} not found.")
+		}
+		render (text: file.getId().toString(), contentType: "text/plain", encoding: "UTF8")
 	}
 	
 	/**
@@ -52,19 +71,34 @@ class FilesystemController {
 	 * @return the id of the file as a string.
 	 */
 	def save() {
-		validateInsert()
-		GridFSFile file = fs.insertFile(request, params)
+		validateInsert(params)
+		params.put(FilesystemService.UPLOADED_BY, request.getUserPrincipal()?.getName())
+		GridFSFile file = null
+		def contentType = request.contentType
+		MimeType mimeType = new MimeType(contentType)
+		if (mimeType.match("multipart/form-data")) {
+			// This happens if the file is being uploaded with an upload form.
+			def uploadFile = request.getFile('upload')
+			// The next line can't happen because of validation, so do we want to be able to do this??
+			if (!params.name) params.put('name', uploadFile.originalFileName)
+			file = fs.insertFile(uploadFile.contentType, uploadFile.inputStream, params)
+		} else {
+			// Just take the post content as the file content.
+			file = fs.insertFile(contentType, request.inputStream, uploadedBy, params)
+		}
 		render file.id.toString()
 	}
 	
 	def validateInsert(params) {
-		validateRequiredFields(params)
+		validateFields(requiredFields, params)
 	}
 	
-	def validateRequiredFields(params) {
-		requiredFields.each { name ->
-			if (!params[name]) {
-				throw new ValidationException("The following fields are required: $requiredFields");
+	def validateFields(fields, params) {
+		fields.each { name ->
+			if (!params.containsKey(name)) {
+				def nv = "field is"
+				if (fields.size() > 1) nv = "fields are"
+				throw new ValidationException("The following ${nv} required: $fields");
 			}
 		}
 	}

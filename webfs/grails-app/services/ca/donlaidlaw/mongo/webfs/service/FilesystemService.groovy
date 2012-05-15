@@ -5,6 +5,8 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.bson.types.ObjectId;
 
+import sun.tools.tree.UplevelReference;
+
 import com.mongodb.BasicDBObject
 import com.mongodb.DB;
 import com.mongodb.DBCollection;
@@ -16,6 +18,7 @@ import com.mongodb.gridfs.GridFSFile;
 import com.mongodb.gridfs.GridFSInputFile;
 
 class FilesystemService {
+	public static final String ID = "id";
 	public static final String TENANT = "tenant";
 	public static final String UPLOADED_BY = "uploadedBy";
 	public static final String MODIFIED_BY = "modifiedBy";
@@ -28,41 +31,80 @@ class FilesystemService {
 	String bucket = "fs"
 	String root = ""
 		
-    def insertFile(HttpServletRequest request, Map<String, Object> params) {
+    def insertFile(String contentType, InputStream inputStream, Map<String, Object> params) {
 		GridFS gridFS = new GridFS(db, bucket)
 		String filename = params.name
-		GridFSInputFile gridFile = gridFS.createFile(request.inputStream, filename, false)
-		gridFile.setContentType(request.contentType)
-		DBObject metadata = gridFile.getMetaData()
-		if (metadata == null) {
-			metadata = new BasicDBObject()
-			gridFile.setMetaData(metadata)
-		}
-		metadata.put(TENANT, params[TENANT])
-		metadata.put(UPLOADED_BY, request.getUserPrincipal()?.getName())
-		metadata.put(CLASSIFIER, params[CLASSIFIER])
-		metadata.put(OWNER, params[OWNER])
-		metadata.put(REFERENCES, params.list(REFERENCES))
-		metadata.put(TAGS, params.list(TAGS))
-		
+		GridFSInputFile gridFile = gridFS.createFile(inputStream, filename, false)
+		gridFile.setContentType(contentType)
+		setFileMetadataFromParams(gridFile, params, true)
 		gridFile.save();
 		return gridFile;
     }
 	
-	def findDocument(HttpServletRequest request, Map<String, Object> params) {
+	def updateFile(Map<String, Object> params) {
 		GridFS gridFS = new GridFS(db, bucket)
-		
+		GridFSDBFile gridFile = gridFS.findOne(new ObjectId(params[ID]))
+		if (validateGridFileTenant(gridFile, params[TENANT])) {
+			setFileMetadataFromParams(gridFile, params, false)
+			gridFile.save();
+			return gridFile;
+		}
+		return null;
+	}
+	
+	def deleteFile(Map<String, Object> params) {
+		GridFS gridFS = new GridFS(db, bucket)
+		GridFSDBFile gridFile = gridFS.findOne(new ObjectId(params[ID]))
+		if (validateGridFileTenant(gridFile, params[TENANT])) {
+			gridFS.remove(new ObjectId(params[ID]))
+			return gridFile;
+		}
+		return null;
+	}
+	
+	def setFileMetadataFromParams(GridFSFile file, Map<String, Object> params, boolean isInsert) {
+		DBObject metadata = file.getMetaData()
+		if (metadata == null) {
+			metadata = new BasicDBObject()
+			file.setMetaData(metadata)
+		}
+		metadata.put(TENANT, params[TENANT])
+		if (isInsert) {
+			if (params[UPLOADED_BY]) metadata.put(UPLOADED_BY, params[UPLOADED_BY])
+		} else {
+			if (params[MODIFIED_BY]) metadata.put(MODIFIED_BY, params[MODIFIED_BY])
+		}
+		metadata.put(CLASSIFIER, params[CLASSIFIER])
+		metadata.put(OWNER, params[OWNER])
+		metadata.put(REFERENCES, params.list(REFERENCES))
+		metadata.put(TAGS, params.list(TAGS))
+	}
+	
+	def findDocument(HttpServletRequest request, Map<String, Object> params) {
+		GridFS gridFS = new GridFS(db, bucket)	
 	}
 	
 	def getDocument(String tenant, String id) {
 		GridFS gridFS = new GridFS(db, bucket)
 		GridFSDBFile dbFile = gridFS.findOne(new ObjectId(id))
-		if (dbFile) {
-			if (!tenant.equals(dbFile.getMetaData().get(TENANT))) {
-				return null;
+		if (validateGridFileTenant(dbFile, tenant)) {
+			return dbFile;
+		}
+		return null;
+	}
+	
+	def validateGridFileTenant(GridFSFile file, String tenant) {
+		if (tenant == null) {
+			// It would be best not to call this method with a null tenant.
+			return false;
+		}
+		if (file) {
+			DBObject metadata = file.getMetaData()
+			if (metadata) {
+				return tenant.equals(metadata[TENANT])
 			}
 		}
-		return dbFile;
+		return false
 	}
 
 	def copyMetadataToResponse(GridFSDBFile document, HttpServletResponse response) {
