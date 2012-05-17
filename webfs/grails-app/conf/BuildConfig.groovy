@@ -34,19 +34,16 @@ grails.project.dependency.resolution = {
     dependencies {
         // specify dependencies here under either 'build', 'compile', 'runtime', 'test' or 'provided' scopes eg.
 
-        // runtime 'mysql:mysql-connector-java:5.1.16'
+        test 'com.jayway.restassured:rest-assured:1.6.1'
     }
 
     plugins {
 		compile ":mongodb:1.0.0.GA"
+        compile ":functional-test:1.2.7"
 
+        // TODO - remove not needed plugins, like jquery and resources
         runtime ":jquery:1.7.1"
         runtime ":resources:1.1.6"
-
-        // Uncomment these (or add new ones) to enable additional resources capabilities
-        //runtime ":zipped-resources:1.0"
-        //runtime ":cached-resources:1.0"
-        //runtime ":yui-minify-resources:0.1.4"
 
         build ":tomcat:$grailsVersion"
     }
