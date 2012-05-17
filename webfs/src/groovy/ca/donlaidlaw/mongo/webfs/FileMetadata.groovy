@@ -6,9 +6,9 @@ import grails.validation.Validateable
  * The metadata for some document.
  */
 @Validateable
-class DocumentMetadata {
+class FileMetadata {
 
-    String documentId
+    String fileId
 
     String fileName
     long fileSize
@@ -33,16 +33,21 @@ class DocumentMetadata {
     String note
 
     static constraints = {
-        tenant blank: false, nullable: false
         fileName blank: false, nullable: false
-        owner blank: false, nullable: false
-        uploadDate nullable: false
-        modifiedBy blank: false, nullable:  false
+
+        tenant blank: false, nullable: false
+        owner blank: true, nullable: true
+        uploadedBy nullable: true, blank: true
+        modifiedBy blank: true, nullable:  true
         uploadDate nullable: true
 
         tags nullable: true
         note nullable: true, blank: true
         references nullable: true
+        classifier nullable: true, blank: true
+
+        contentType nullable: true, blank: true
+        md5Checksum nullable: true, blank: true
     }
 
 }
