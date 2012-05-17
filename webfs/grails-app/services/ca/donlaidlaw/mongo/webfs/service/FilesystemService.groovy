@@ -1,30 +1,22 @@
 package ca.donlaidlaw.mongo.webfs.service
 
-import ca.donlaidlaw.mongo.webfs.Document
-import ca.donlaidlaw.mongo.webfs.DocumentMetadataMapper
-import com.mongodb.BasicDBObject
 import com.mongodb.BasicDBObjectBuilder
 import com.mongodb.DB
 import com.mongodb.DBObject
+import com.mongodb.MongoException
 import com.mongodb.gridfs.GridFS
 import com.mongodb.gridfs.GridFSDBFile
 import com.mongodb.gridfs.GridFSFile
-import com.mongodb.gridfs.GridFSInputFile
 import org.bson.types.ObjectId
 
 import javax.annotation.PostConstruct
 import javax.servlet.http.HttpServletRequest
 
+import ca.donlaidlaw.mongo.webfs.*
+
 class FilesystemService {
 
-    public static final String ID = "id";
     public static final String TENANT = "tenant";
-    public static final String UPLOADED_BY = "uploadedBy";
-    public static final String MODIFIED_BY = "modifiedBy";
-    public static final String CLASSIFIER = "classifier";
-    public static final String TAGS = "tags";
-    public static final String OWNER = "owner";
-    public static final String REFERENCES = "references";
 
     /** Database */
     DB db
@@ -33,7 +25,7 @@ class FilesystemService {
 
     String bucket = "fs"
 
-    DocumentMetadataMapper mapper = new DocumentMetadataMapper()
+    FileMetadataMapper mapper = new FileMetadataMapper()
 
     @PostConstruct
     void init() {
@@ -59,35 +51,98 @@ class FilesystemService {
                 "related")
     }
 
-    def insertFile(String contentType, InputStream inputStream, Map<String, Object> params) {
-        String filename = params.name
-        GridFSInputFile gridFile = gridFS.createFile(inputStream, filename, false)
-        gridFile.setContentType(contentType)
-        setFileMetadataFromParams(gridFile, params, true)
+    // TODO - what if failed to save to database? MongoException?
+    String insertFile(FileMetadata metadata, InputStream content) {
+        validateFile(metadata)
+
+        GridFSFile gridFile = gridFS.createFile(content, metadata.fileName, false)
+        gridFile.contentType = metadata.contentType
+        gridFile = mapper.write(metadata, gridFile)
+
+        gridFile.save();
+
+        validateSavedFile(gridFile, metadata)
+        metadata.fileId = gridFile.id.toString()
+        metadata.fileSize = gridFile.length
+
+        return metadata.fileId
+    }
+
+    private void validateSavedFile(GridFSFile gridFile, FileMetadata metadata) {
+        // TODO - check md5 without transferring to GridFS
+
+        try {
+            // check if file was transferred correct
+            gridFile.validate()
+        } catch (MongoException e) {
+            gridFS.remove((ObjectId) gridFile.id)
+            throw new InvalidMD5ChecksumException()
+        }
+
+        // validate md5
+        def md5 = gridFile.MD5
+        if (metadata.md5Checksum && metadata.md5Checksum != md5) {
+            gridFS.remove((ObjectId) gridFile.id)
+            throw new InvalidMD5ChecksumException()
+        }
+
+        // if correct, then update docMetadata MD5 checksum
+        metadata.md5Checksum = md5
+    }
+
+    def updateFile(FileMetadata metadata) {
+        validateFile(metadata, true)
+
+        GridFSFile gridFile = gridFS.findOne(new ObjectId(metadata.fileId))
+
+        checkFileExists(gridFile, metadata.fileId);
+        checkFileAccess(gridFile, metadata.tenant)
+
+        gridFile = mapper.update(metadata, gridFile)
         gridFile.save();
         return gridFile;
     }
 
-    def updateFile(Map<String, Object> params) {
-        GridFSDBFile gridFile = gridFS.findOne(new ObjectId(params[ID]))
-        if (checkFileAccess(gridFile, params[TENANT])) {
-            setFileMetadataFromParams(gridFile, params, false)
-            gridFile.save();
-            return gridFile;
-        }
-        return null;
+    /**
+     * Delete file by id.
+     *
+     * @param fileId the file id.
+     * @param tenant the tenant.
+     */
+    void deleteFile(String fileId, String tenant) {
+        final def objectId = new ObjectId(fileId)
+        final GridFSDBFile gridFile = gridFS.findOne(objectId)
+
+        checkFileExists(gridFile, fileId);
+        checkFileAccess(gridFile, tenant);
+
+        gridFS.remove(objectId)
     }
 
-    def deleteFile(Map<String, Object> params) {
-        GridFSDBFile gridFile = gridFS.findOne(new ObjectId(params[ID]))
-        if (checkFileAccess(gridFile, params[TENANT])) {
-            gridFS.remove(new ObjectId(params[ID]))
-            return gridFile;
-        }
-        return null;
+    /**
+     * Find the document by id.
+     *
+     * @param tenant the tenant.
+     * @param id the document id.
+     * @return the found document information.
+     * @throws FileNotFoundException if specified file was not found
+     * @throws FileAccessDeniedException if user has no access to the specified file
+     */
+    WebFSFile getFile(String tenant, String id) {
+        GridFSDBFile dbFile = gridFS.findOne(new ObjectId(id))
+
+        checkFileExists(dbFile, id)
+        checkFileAccess(dbFile, tenant)
+
+        def metadata = mapper.read(dbFile)
+        return new WebFSFile(metadata, dbFile.inputStream);
     }
 
-    def setFileMetadataFromParams(GridFSFile file, Map<String, Object> params, boolean isInsert) {
+    def findFile(HttpServletRequest request, Map<String, Object> params) {
+        // TODO - implement me
+    }
+
+    /*def setFileMetadataFromParams(GridFSFile file, Map<String, Object> params, boolean isInsert) {
         DBObject metadata = file.getMetaData()
         if (metadata == null) {
             metadata = new BasicDBObject()
@@ -104,38 +159,36 @@ class FilesystemService {
         metadata.put(REFERENCES, params.list(REFERENCES))
         metadata.put(TAGS, params.list(TAGS))
     }
+*/
 
-    def findDocument(HttpServletRequest request, Map<String, Object> params) {
-        // TODO - implement me
+    private void checkFileExists(GridFSDBFile file, String fileId) {
+        if (!file) {
+            throw new FileNotFoundException("File with id $fileId was not found");
+        }
     }
 
-    /**
-     * Find the document by id.
-     * @param tenant the tenant.
-     * @param id the document id.
-     * @return the found document information.
-     */
-    Document getDocument(String tenant, String id) {
-        GridFSDBFile dbFile = gridFS.findOne(new ObjectId(id))
-        if (checkFileAccess(dbFile, tenant)) {
-            def metadata = mapper.read(dbFile)
-            return new Document(metadata, dbFile.inputStream);
-        }
-        return null;
-    }
-
-    private boolean checkFileAccess(GridFSFile file, String tenant) {
-        if (tenant == null) {
-            // It would be best not to call this method with a null tenant.
-            return false;
-        }
-        if (file) {
-            DBObject metadata = file.getMetaData()
-            if (metadata) {
-                return tenant.equals(metadata[TENANT])
+    private void checkFileAccess(GridFSFile file, String tenant) {
+        if (tenant != null && file) {
+            DBObject metadata = file.metaData
+            if (metadata && tenant.equals(metadata[TENANT])) {
+                return
             }
         }
-        return false
+        throw new FileAccessDeniedException(file.id.toString())
+    }
+
+    private void validateFile(FileMetadata metadata, boolean update = false) {
+        metadata.validate()
+
+        if (update) {
+            if (!metadata.modifiedBy) {
+                metadata.errors.rejectValue("modifiedBy", "nullable")
+            }
+        }
+
+        if (metadata.hasErrors()) {
+            throw new EntityValidationException();
+        }
     }
 
     // TODO - move this functionality to controller

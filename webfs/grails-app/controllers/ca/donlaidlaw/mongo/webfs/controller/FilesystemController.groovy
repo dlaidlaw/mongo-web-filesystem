@@ -1,29 +1,18 @@
 package ca.donlaidlaw.mongo.webfs.controller
 
-import ca.donlaidlaw.mongo.webfs.DocumentMetadata
-import ca.donlaidlaw.mongo.webfs.DocumentNotFoundException
-import ca.donlaidlaw.mongo.webfs.ValidationException
 import ca.donlaidlaw.mongo.webfs.service.FilesystemService
-import com.mongodb.gridfs.GridFSFile
 import grails.converters.JSON
 import grails.converters.XML
 
 import javax.activation.MimeType
-import org.springframework.http.HttpStatus
 
-class FilesystemController {
+import ca.donlaidlaw.mongo.webfs.*
 
-    FilesystemService fs
+class FilesystemController extends AbstractRESTController {
 
-    // TODO - use document metadata constraints
-    String[] requiredFields = ["tenant", "name"]
+    FilesystemService filesystemService
 
     def get() {
-        if (!params.tenant) {
-            response.sendError HttpStatus.FORBIDDEN.value()
-            return
-        }
-
         if (params.id) {
             retrieveDocument()
         } else {
@@ -32,12 +21,18 @@ class FilesystemController {
     }
 
     void retrieveDocument() {
-        def document = fs.getDocument(params.tenant, params.id)
-        if (document == null) {
-            response.sendError HttpStatus.NOT_FOUND.value()
+        def document
+        try {
+            document = filesystemService.getFile(params.tenant, params.id)
+        } catch (FileNotFoundException e) {
+            response.sendError SC_NOT_FOUND
+            return
+        } catch (FileAccessDeniedException e) {
+            response.sendError SC_FORBIDDEN
             return
         }
-        response.setHeader("Content-disposition", "attachment; filename=${document.filename}")
+
+        response.setHeader("Content-disposition", "attachment; filename=${document.metadata.fileName}")
         response.contentType = document.metadata.contentType
         copyMetadataToResponse(document.metadata)
 
@@ -47,7 +42,7 @@ class FilesystemController {
 
     private void searchDocuments() {
         // TODO - Need to implement this method in the service
-        def documents = fs.findDocuments(request, params)
+        def documents = filesystemService.findDocuments(request, params)
         withFormat {
             xml { render documents as XML }
             json { render documents as JSON }
@@ -60,25 +55,36 @@ class FilesystemController {
      * @return the id of the file as a string.
      */
     def insert() {
-        validateInsert(params)
-        params.put(FilesystemService.UPLOADED_BY, request.getUserPrincipal()?.getName())
+        def metadata = new FileMetadata()
+        readMetadata(metadata)
 
-        // TODO - read metadata from request
+        // custom metadata
+        metadata.uploadedBy = request.userPrincipal?.name
 
-        GridFSFile file = null
         def contentType = request.contentType
-        MimeType mimeType = new MimeType(contentType)
-        if (mimeType.match("multipart/form-data")) {
+        def content
+        if (isFileUploaded(contentType)) {
             // This happens if the file is being uploaded with an upload form.
             def uploadFile = request.getFile('upload')
-            // The next line can't happen because of validation, so do we want to be able to do this??
-            if (!params.name) params.put('name', uploadFile.originalFileName)
-            file = fs.insertFile(uploadFile.contentType, uploadFile.inputStream, params)
+            if (!metadata.fileName) {
+                metadata.fileName = uploadFile.originalFileName
+            }
+            metadata.contentType = uploadFile.contentType
+            content = uploadFile.inputStream
         } else {
             // Just take the post content as the file content.
-            file = fs.insertFile(contentType, request.inputStream, params)
+            metadata.contentType = contentType
+            content = request.inputStream
         }
-        render file.id.toString()
+
+        try {
+            String id = filesystemService.insertFile(metadata, content)
+            render text: id.toString(), status: 200
+        } catch (EntityValidationException e) {
+            renderErrors(metadata)
+        } catch (ValidationException e) {
+            renderError(e)
+        }
     }
 
     /**
@@ -86,43 +92,49 @@ class FilesystemController {
      * @return the file id if the file was found.
      */
     def update() {
-        validateFields([FilesystemService.TENANT, FilesystemService.ID], params)
-        params[FilesystemService.MODIFIED_BY] = request.getUserPrincipal()?.getName()
-        GridFSFile file = fs.updateFile(params)
-        if (file == null) {
-            throw new DocumentNotFoundException("Document ID ${params[FilesystemService.ID]} not found.")
+        def metadata = new FileMetadata()
+        readMetadata(metadata)
+
+        // custom metadata
+        metadata.modifiedBy = request.userPrincipal?.name
+
+        try {
+            filesystemService.updateFile(metadata)
+        } catch (EntityValidationException e) {
+            renderErrors(metadata)
+            return
+        } catch (ValidationException e) {
+            renderError(e)
+            return
+        } catch (FileNotFoundException e) {
+            response.sendError SC_NOT_FOUND
+            return
+        } catch (FileAccessDeniedException e) {
+            response.sendError SC_FORBIDDEN
+            return
         }
-        render(text: file.getId().toString(), contentType: "text/plain", encoding: "UTF8")
+
+        render status: SC_SUCCESS
     }
 
     def delete() {
-        validateFields([FilesystemService.TENANT, FilesystemService.ID], params)
-        params[FilesystemService.MODIFIED_BY] = request.getUserPrincipal()?.getName()
-        GridFSFile file = fs.deleteFile(params)
-        if (file == null) {
-            throw new DocumentNotFoundException("Document ID ${params[FilesystemService.ID]} not found.")
+        try {
+            filesystemService.deleteFile(params.id, params.tenant)
+        } catch (FileNotFoundException e) {
+            response.sendError SC_NOT_FOUND
+            return
+        } catch (FileAccessDeniedException e) {
+            response.sendError SC_FORBIDDEN
+            return
         }
-        render(text: file.getId().toString(), contentType: "text/plain", encoding: "UTF8")
+
+        render status: SC_SUCCESS
     }
 
     // helpers
 
-    private def validateInsert(params) {
-        validateFields(requiredFields, params)
-    }
-
-    private def validateFields(fields, params) {
-        fields.each { name ->
-            if (!params.containsKey(name)) {
-                def nv = "field is"
-                if (fields.size() > 1) nv = "fields are"
-                throw new ValidationException("The following ${nv} required: $fields");
-            }
-        }
-    }
-
-    private def copyMetadataToResponse(DocumentMetadata metadata) {
-        response.setHeader("WEBFS.ID", metadata.documentId);
+    private def copyMetadataToResponse(FileMetadata metadata) {
+        response.setHeader("WEBFS.ID", metadata.fileId);
         response.setHeader("WEBFS.NAME", metadata.fileName);
         response.setIntHeader("WEBFS.SIZE", metadata.fileSize.intValue());
         response.setHeader("WEBFS.MD5", metadata.md5Checksum);
@@ -135,12 +147,39 @@ class FilesystemController {
         addOptionalHeader("WEBFS.OWNER", metadata.owner)
         addOptionalHeader("WEBFS.REFERENCES", metadata.references)
         addOptionalHeader("WEBFS.TAGS", metadata.tags)
+        addOptionalHeader("WEBFS.NOTE", metadata.note)
     }
 
-    private void addOptionalHeader(String headerName, Object value) {
-        // TODO - check works good not only for lists but for scalars (well, should be)
+    private void addOptionalHeader(String headerName, String value) {
+        if (value) {
+            response.setHeader(headerName, value)
+        }
+    }
+
+    private void addOptionalHeader(String headerName, Collection<String> value) {
         if (value) {
             value.each { response.addHeader(headerName, it) }
         }
     }
+
+    private void readMetadata(final FileMetadata metadata) {
+        metadata.fileName = params.name?.trim()
+        metadata.tags = params.list('tags')
+        metadata.references = params.list('references')
+        metadata.md5Checksum = params.md5
+        metadata.note = params.note?.trim()
+        metadata.classifier = params.classifier?.trim()
+        metadata.tenant = params.tenant
+        metadata.owner = params.owner
+    }
+
+    private boolean isFileUploaded(String contentType) {
+        if (contentType) {
+            MimeType mimeType = new MimeType(contentType)
+            return mimeType.match("multipart/form-data")
+        }
+
+        return false
+    }
+
 }
