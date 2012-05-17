@@ -14,9 +14,10 @@ class FileMetadataMapper {
     static final String UPLOADED_BY = "uploadedBy"
     static final String MODIFIED_BY = "modifiedBy"
     static final String CLASSIFIER = "classifier"
-    static final String TAGS = "tags"
     static final String NOTE = "note"
+    static final String TAGS = "tags"
     static final String REFERENCES = "references"
+    static final String FILENAME = "filename"
 
     // ------------------------------------------- Read
 
@@ -57,11 +58,11 @@ class FileMetadataMapper {
 
     /**
      * Write file metadata to gridFS file
-     * @param docMetadata the file metadata.
+     * @param fileMetadata the file metadata.
      * @param file the GridFS file.
      * @return the GridFS file with metadata
      */
-    GridFSFile write(final FileMetadata docMetadata, final GridFSFile file) {
+    GridFSFile write(final FileMetadata fileMetadata, final GridFSFile file) {
         DBObject metadata = file.metaData
 
         if (metadata == null) {
@@ -69,25 +70,25 @@ class FileMetadataMapper {
             file.metaData = metadata
         }
 
-        metadata.put(OWNER, docMetadata.owner)
-        metadata.put(TENANT, docMetadata.tenant)
-        metadata.put(UPLOADED_BY, docMetadata.uploadedBy)
-        metadata.put(MODIFIED_BY, docMetadata.modifiedBy)
-        metadata.put(CLASSIFIER, docMetadata.classifier)
-        metadata.put(TAGS, docMetadata.tags)
-        metadata.put(NOTE, docMetadata.note)
-        metadata.put(REFERENCES, docMetadata.references)
+        metadata.put(OWNER, fileMetadata.owner)
+        metadata.put(TENANT, fileMetadata.tenant)
+        metadata.put(UPLOADED_BY, fileMetadata.uploadedBy)
+        metadata.put(MODIFIED_BY, fileMetadata.modifiedBy)
+        metadata.put(CLASSIFIER, fileMetadata.classifier)
+        metadata.put(TAGS, fileMetadata.tags)
+        metadata.put(NOTE, fileMetadata.note)
+        metadata.put(REFERENCES, fileMetadata.references)
 
         return file
     }
 
     /**
      * Write file metadata to gridFS file
-     * @param docMetadata the file metadata.
+     * @param fileMetadata the file metadata.
      * @param file the GridFS file.
      * @return the GridFS file with metadata
      */
-    GridFSFile update(final FileMetadata docMetadata, final GridFSFile file) {
+    GridFSFile update(final FileMetadata fileMetadata, final GridFSFile file) {
         DBObject metadata = file.metaData
 
         if (metadata == null) {
@@ -95,11 +96,14 @@ class FileMetadataMapper {
             file.metaData = metadata
         }
 
-        metadata.put(MODIFIED_BY, docMetadata.modifiedBy)
-        metadata.put(CLASSIFIER, docMetadata.classifier)
-        metadata.put(TAGS, docMetadata.tags)
-        metadata.put(NOTE, docMetadata.note)
-        metadata.put(REFERENCES, docMetadata.references)
+        file.put(FILENAME, fileMetadata.fileName)
+
+        metadata.put(OWNER, fileMetadata.owner)
+        metadata.put(MODIFIED_BY, fileMetadata.modifiedBy)
+        metadata.put(CLASSIFIER, fileMetadata.classifier)
+        metadata.put(TAGS, fileMetadata.tags)
+        metadata.put(NOTE, fileMetadata.note)
+        metadata.put(REFERENCES, fileMetadata.references)
 
         return file
     }

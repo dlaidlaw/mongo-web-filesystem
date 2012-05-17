@@ -66,9 +66,7 @@ class FilesystemController extends AbstractRESTController {
         if (isFileUploaded(contentType)) {
             // This happens if the file is being uploaded with an upload form.
             def uploadFile = request.getFile('upload')
-            if (!metadata.fileName) {
-                metadata.fileName = uploadFile.originalFileName
-            }
+            metadata.fileName = metadata.fileName?: uploadFile.originalFileName
             metadata.contentType = uploadFile.contentType
             content = uploadFile.inputStream
         } else {
@@ -163,6 +161,7 @@ class FilesystemController extends AbstractRESTController {
     }
 
     private void readMetadata(final FileMetadata metadata) {
+        metadata.fileId = params.id?.trim()
         metadata.fileName = params.name?.trim()
         metadata.tags = params.list('tags')
         metadata.references = params.list('references')

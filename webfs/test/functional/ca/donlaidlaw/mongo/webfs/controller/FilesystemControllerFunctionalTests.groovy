@@ -5,6 +5,7 @@ import org.bson.types.ObjectId
 import org.junit.Test
 
 import static com.jayway.restassured.RestAssured.given
+import org.junit.Ignore
 
 /**
  * Integration tests for {@code DocumentRESTController}.
@@ -118,9 +119,20 @@ class FilesystemControllerFunctionalTests {
         def getResponse = given().get(testTenantUri + "/$fileId")
 
         assert getResponse.header('WEBFS.ID') == fileId
+        assert getResponse.header('WEBFS.TENANT') == "test"
         assert getResponse.header('WEBFS.NAME') == "test.pdf"
         assert getResponse.header('WEBFS.CLASSIFIER') == "test classifier"
         assert getResponse.header('WEBFS.NOTE') == "test note"
+        assert getResponse.header('WEBFS.SIZE') == "12"
+        assert getResponse.header('WEBFS.MD5') != null
+        assert getResponse.header('WEBFS.UPLOAD_DATE') != null
+        assert getResponse.header('WEBFS.OWNER') == "test_owner"
+
+        assert getResponse.headers.getValues('WEBFS.TAGS').size() == 3
+        assert getResponse.headers.getValues('WEBFS.TAGS').containsAll(["tag1", "tag2", "tag3"])
+
+        assert getResponse.headers.getValues('WEBFS.REFERENCES').size() == 3
+        assert getResponse.headers.getValues('WEBFS.REFERENCES').containsAll(["ref1", "ref2", "ref3"])
     }
 
     @Test
@@ -146,6 +158,97 @@ class FilesystemControllerFunctionalTests {
 
     // TODO - test when modifiedBy is null?
 
+    @Test
+    void givenFile_whenUpdate_then200Returned() {
+        def addResponse = givenWithParams().body("test content").post(testTenantUri)
+        def fileId = addResponse.asString()
+
+        def updateResponse = givenWithUpdateParams().auth().preemptive().basic("test_user", "test_password").put(testTenantUri + "/$fileId")
+
+        assert updateResponse.statusCode == 200
+    }
+
+    @Test
+    void givenFile_whenUpdate_thenMetadataUpdated() {
+        def addResponse = givenWithParams().body("test content").post(testTenantUri)
+        def fileId = addResponse.asString()
+
+        givenWithUpdateParams().put(testTenantUri + "/$fileId")
+
+        def getResponse = given().get(testTenantUri + "/$fileId")
+
+        assert getResponse.header('WEBFS.ID') == fileId
+        assert getResponse.header('WEBFS.NAME') == "updated_test.pdf"
+        assert getResponse.header('WEBFS.TENANT') == "test"
+        assert getResponse.header('WEBFS.CLASSIFIER') == "updated test classifier"
+        assert getResponse.header('WEBFS.NOTE') == "updated test note"
+        assert getResponse.header('WEBFS.SIZE') == "12"
+        assert getResponse.header('WEBFS.MD5') != null
+        assert getResponse.header('WEBFS.UPLOAD_DATE') != null
+        assert getResponse.header('WEBFS.OWNER') == "updated_test_owner"
+
+        assert getResponse.headers.getValues('WEBFS.TAGS').size() == 2
+        assert getResponse.headers.getValues('WEBFS.TAGS').containsAll(["updated_tag1", "updated_tag2"])
+
+        assert getResponse.headers.getValues('WEBFS.REFERENCES').size() == 4
+        assert getResponse.headers.getValues('WEBFS.REFERENCES').containsAll([
+                "updated_ref1", "updated_ref2", "updated_ref3", "updated_ref4"])
+    }
+
+    @Test
+    @Ignore("not ready for use yet")
+    void givenFile_whenUpdateWithNewContent_then200() {
+        def addResponse = givenWithParams().body("test content").post(testTenantUri)
+        def fileId = addResponse.asString()
+
+        def updateResponse = givenWithUpdateParams().body("updated test content").put(testTenantUri + "/$fileId")
+
+        assert updateResponse.statusCode == 200
+    }
+
+    // delete
+
+    @Test
+    void givenFile_whenDelete_then200Returned() {
+        def addResponse = givenWithParams().body("test content").post(testTenantUri)
+        def fileId = addResponse.asString()
+
+        def deleteResponse = given().delete(testTenantUri + "/$fileId")
+
+        assert deleteResponse.statusCode == 200
+    }
+
+    @Test
+    void givenFile_whenDelete_thenFileIsDeleted() {
+        def addResponse = givenWithParams().body("test content").post(testTenantUri)
+        def fileId = addResponse.asString()
+
+        given().delete(testTenantUri + "/$fileId")
+
+        def getResponse = given().get(testTenantUri + "/$fileId")
+
+        assert getResponse.statusCode == 404
+    }
+
+    @Test
+    void whenDeleteFileWithUnknownId_then404Returned() {
+        def fileId = ObjectId.newInstance().toString()
+
+        def deleteResponse = given().delete(testTenantUri + "/$fileId")
+
+        assert deleteResponse.statusCode == 404
+    }
+
+    @Test
+    void whenDeleteOthersFileById_then403Returned() {
+        def addResponse = givenWithParams().body("test content").post(otherTenantUri)
+        def fileId = addResponse.asString()
+
+        def deleteResponse = given().delete(testTenantUri + "/$fileId")
+
+        assert deleteResponse.statusCode == 403
+    }
+
     //helpers
 
     private static def givenWithParams() {
@@ -159,6 +262,21 @@ class FilesystemControllerFunctionalTests {
                 .queryParam('references', 'ref1')
                 .queryParam('references', 'ref2')
                 .queryParam('references', 'ref3')
+                .queryParam('owner', 'test_owner')
+    }
+
+    private static def givenWithUpdateParams() {
+        return given()
+                .queryParam('name', 'updated_test.pdf')
+                .queryParam('tags', 'updated_tag1')
+                .queryParam('tags', 'updated_tag2')
+                .queryParam('classifier', 'updated test classifier')
+                .queryParam('note', 'updated test note')
+                .queryParam('references', 'updated_ref1')
+                .queryParam('references', 'updated_ref2')
+                .queryParam('references', 'updated_ref3')
+                .queryParam('references', 'updated_ref4')
+                .queryParam('owner', 'updated_test_owner')
     }
 
 }

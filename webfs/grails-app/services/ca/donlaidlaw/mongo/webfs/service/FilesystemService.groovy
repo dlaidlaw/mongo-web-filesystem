@@ -90,6 +90,13 @@ class FilesystemService {
         metadata.md5Checksum = md5
     }
 
+    /**
+     * Updates the document metadata only.
+     * This method doesn't update a file content or version, also it doesn't update creator and create date information.
+     *
+     * @param docMetadata the document metadata.
+     * @return the document id
+     */
     def updateFile(FileMetadata metadata) {
         validateFile(metadata, true)
 
@@ -100,6 +107,28 @@ class FilesystemService {
 
         gridFile = mapper.update(metadata, gridFile)
         gridFile.save();
+
+        return gridFile;
+    }
+
+    /**
+     * Updates the document metadata only.
+     * This method doesn't update a file content or version, also it doesn't update creator and create date information.
+     *
+     * @param docMetadata the document metadata.
+     * @return the document id
+     */
+    def updateFile(FileMetadata metadata, InputStream content) {
+        validateFile(metadata, true)
+
+        GridFSFile gridFile = gridFS.findOne(new ObjectId(metadata.fileId))
+
+        checkFileExists(gridFile, metadata.fileId);
+        checkFileAccess(gridFile, metadata.tenant)
+
+        gridFile = mapper.update(metadata, gridFile)
+        gridFile.save();
+
         return gridFile;
     }
 
@@ -180,11 +209,13 @@ class FilesystemService {
     private void validateFile(FileMetadata metadata, boolean update = false) {
         metadata.validate()
 
+        /*
+        TODO - currently modifiedBy can be null, uncomment as soon as security is enabled
         if (update) {
             if (!metadata.modifiedBy) {
                 metadata.errors.rejectValue("modifiedBy", "nullable")
             }
-        }
+        }*/
 
         if (metadata.hasErrors()) {
             throw new EntityValidationException();
