@@ -5,7 +5,7 @@ import org.bson.types.ObjectId
 import org.junit.Test
 
 import static com.jayway.restassured.RestAssured.given
-import org.junit.Ignore
+import static org.apache.commons.lang3.RandomStringUtils.randomAlphabetic
 
 /**
  * Integration tests for {@code DocumentRESTController}.
@@ -154,9 +154,114 @@ class FilesystemControllerFunctionalTests {
         assert getResponse.statusCode == 403
     }
 
-    // update
+    // search file
 
-    // TODO - test when modifiedBy is null?
+    @Test
+    void givenFile_whenSearchByFilename_then200Returned() {
+        givenWithParams(name: "test.pdf").body("test content").post(testTenantUri)
+        givenWithParams(name: "othr.pdf").body("test content").post(testTenantUri)
+
+        def getResponse = given().queryParam("name", "test.pdf").get(testTenantUri)
+
+        assert getResponse.statusCode == 200
+    }
+
+    @Test
+    void givenFile_whenSearchByFilename_thenFound() {
+        def filename = randomAlphabetic(20);
+        def file1Id = givenWithParams(name: filename).body("test content").post(testTenantUri).asString()
+        def file2Id = givenWithParams().body("test content").post(testTenantUri).asString()
+
+        def getResponse = given().queryParam("name", filename).get(testTenantUri)
+
+        def response = getResponse.asString()
+        assert response.contains(file1Id)
+        assert !response.contains(file2Id)
+    }
+
+    @Test
+    void givenFile_whenSearchByClassifier_thenFound() {
+        def classifier = randomAlphabetic(20);
+        def file1Id = givenWithParams(classifier: classifier).body("test content").post(testTenantUri).asString()
+        def file2Id = givenWithParams().body("test content").post(testTenantUri).asString()
+
+        def getResponse = given().queryParam("classifier", classifier).get(testTenantUri)
+
+        def response = getResponse.asString()
+        assert response.contains(file1Id)
+        assert !response.contains(file2Id)
+    }
+
+    @Test
+    void givenFile_whenSearchByTag_thenFound() {
+        def tag = randomAlphabetic(20);
+        def file1Id = givenWithParams(tag1: tag).body("test content").post(testTenantUri).asString()
+        def file2Id = givenWithParams().body("test content").post(testTenantUri).asString()
+
+        def getResponse = given().queryParam("tag", tag).get(testTenantUri)
+
+        def response = getResponse.asString()
+        assert response.contains(file1Id)
+        assert !response.contains(file2Id)
+    }
+
+    @Test
+    void givenFile_whenSearchByReference_thenFound() {
+        def ref = randomAlphabetic(20);
+        def file1Id = givenWithParams(ref2: ref).body("test content").post(testTenantUri).asString()
+        def file2Id = givenWithParams().body("test content").post(testTenantUri).asString()
+
+        def getResponse = given().queryParam("reference", ref).get(testTenantUri)
+
+        def response = getResponse.asString()
+        assert response.contains(file1Id)
+        assert !response.contains(file2Id)
+    }
+
+    @Test
+    void givenFile_whenSearchByOwner_thenFound() {
+        def owner = randomAlphabetic(20);
+        def file1Id = givenWithParams(owner: owner).body("test content").post(testTenantUri).asString()
+        def file2Id = givenWithParams().body("test content").post(testTenantUri).asString()
+
+        def getResponse = given().queryParam("owner", owner).get(testTenantUri)
+
+        def response = getResponse.asString()
+        assert response.contains(file1Id)
+        assert !response.contains(file2Id)
+    }
+
+    @Test
+    void givenFile_whenSearchByMultipleConditions_thenFound() {
+        def tag = randomAlphabetic(20);
+        def name = randomAlphabetic(20);
+        def owner = randomAlphabetic(20);
+
+        def file2Id = givenWithParams().body("test content").post(testTenantUri).asString()
+        def file1Id = givenWithParams(name: name, owner: owner, tag2: tag).body("test content").post(testTenantUri).asString()
+
+        def getResponse = given()
+                .queryParam("name", name)
+                .queryParam("owner", owner)
+                .queryParam("tag", tag)
+                .get(testTenantUri)
+
+        def response = getResponse.asString()
+        assert response.contains(file1Id)
+        assert !response.contains(file2Id)
+    }
+
+    @Test
+    void givenFileOfOtherUser_whenSearchByFilename_thenNotFound() {
+        def filename = randomAlphabetic(20);
+        def fileId = givenWithParams(name: filename).body("test content").post(otherTenantUri).asString()
+
+        def getResponse = given().queryParam("name", filename).get(testTenantUri)
+
+        assert !getResponse.asString().contains(fileId)
+    }
+
+    // update
 
     @Test
     void givenFile_whenUpdate_then200Returned() {
@@ -193,17 +298,6 @@ class FilesystemControllerFunctionalTests {
         assert getResponse.headers.getValues('WEBFS.REFERENCES').size() == 4
         assert getResponse.headers.getValues('WEBFS.REFERENCES').containsAll([
                 "updated_ref1", "updated_ref2", "updated_ref3", "updated_ref4"])
-    }
-
-    @Test
-    @Ignore("not ready for use yet")
-    void givenFile_whenUpdateWithNewContent_then200() {
-        def addResponse = givenWithParams().body("test content").post(testTenantUri)
-        def fileId = addResponse.asString()
-
-        def updateResponse = givenWithUpdateParams().body("updated test content").put(testTenantUri + "/$fileId")
-
-        assert updateResponse.statusCode == 200
     }
 
     // delete
@@ -251,18 +345,18 @@ class FilesystemControllerFunctionalTests {
 
     //helpers
 
-    private static def givenWithParams() {
+    private static def givenWithParams(def params = [:]) {
         return given()
-                .queryParam('name', 'test.pdf')
-                .queryParam('tags', 'tag1')
-                .queryParam('tags', 'tag2')
-                .queryParam('tags', 'tag3')
-                .queryParam('classifier', 'test classifier')
-                .queryParam('note', 'test note')
-                .queryParam('references', 'ref1')
-                .queryParam('references', 'ref2')
-                .queryParam('references', 'ref3')
-                .queryParam('owner', 'test_owner')
+                .queryParam('name', params.name ?: 'test.pdf')
+                .queryParam('tags', params.tag1 ?: 'tag1')
+                .queryParam('tags', params.tag2 ?: 'tag2')
+                .queryParam('tags', params.tag3 ?: 'tag3')
+                .queryParam('classifier', params.classifier ?: 'test classifier')
+                .queryParam('note', params.note ?: 'test note')
+                .queryParam('references', params.ref1 ?: 'ref1')
+                .queryParam('references', params.ref2 ?: 'ref2')
+                .queryParam('references', params.ref3 ?: 'ref3')
+                .queryParam('owner', params.owner ?: 'test_owner')
     }
 
     private static def givenWithUpdateParams() {

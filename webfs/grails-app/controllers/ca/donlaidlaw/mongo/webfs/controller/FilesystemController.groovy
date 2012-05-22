@@ -10,44 +10,49 @@ import ca.donlaidlaw.mongo.webfs.*
 
 class FilesystemController extends AbstractRESTController {
 
+    static allowedMethods = [get: 'GET', insert: 'POST', update: 'PUT', delete: 'DELETE']
+
     FilesystemService filesystemService
 
     def get() {
-        if (params.id) {
-            retrieveDocument()
-        } else {
-            searchDocuments()
+        try {
+            if (params.id) {
+                retrieveFile()
+            } else {
+                searchFiles()
+            }
+        } catch (AccessDeniedException e) {
+            log.error("Access denied error: " + e.message)
+            response.sendError SC_FORBIDDEN
         }
     }
 
-    void retrieveDocument() {
-        def document
+    private void retrieveFile() {
+        def file
         try {
-            document = filesystemService.getFile(params.tenant, params.id)
+            file = filesystemService.getFile(params.tenant, params.id)
         } catch (FileNotFoundException e) {
             response.sendError SC_NOT_FOUND
             return
-        } catch (FileAccessDeniedException e) {
-            response.sendError SC_FORBIDDEN
-            return
         }
 
-        response.setHeader("Content-disposition", "attachment; filename=${document.metadata.fileName}")
-        response.contentType = document.metadata.contentType
-        copyMetadataToResponse(document.metadata)
+        response.setHeader("Content-disposition", "attachment; filename=${file.metadata.fileName}")
+        response.contentType = file.metadata.contentType
+        copyMetadataToResponse(file.metadata)
 
-        response << document.content
+        response << file.content
         response.flushBuffer()
     }
 
-    private void searchDocuments() {
-        // TODO - Need to implement this method in the service
-        def documents = filesystemService.findDocuments(request, params)
+    private void searchFiles() {
+        def searchConditions = readSearchConditions()
+        def page = readPage()
+        def filesMetadata = filesystemService.searchFiles(searchConditions, page)
+
         withFormat {
-            xml { render documents as XML }
-            json { render documents as JSON }
+            xml { render filesMetadata.list as XML }
+            json { render filesMetadata.list as JSON }
         }
-        render documents as JSON
     }
 
     /**
@@ -66,7 +71,7 @@ class FilesystemController extends AbstractRESTController {
         if (isFileUploaded(contentType)) {
             // This happens if the file is being uploaded with an upload form.
             def uploadFile = request.getFile('upload')
-            metadata.fileName = metadata.fileName?: uploadFile.originalFileName
+            metadata.fileName = metadata.fileName ?: uploadFile.originalFileName
             metadata.contentType = uploadFile.contentType
             content = uploadFile.inputStream
         } else {
@@ -86,7 +91,7 @@ class FilesystemController extends AbstractRESTController {
     }
 
     /**
-     * This is a PUT request. We only update the metadata, not the file content.
+     * We only update the metadata, not the file content.
      * @return the file id if the file was found.
      */
     def update() {
@@ -107,7 +112,7 @@ class FilesystemController extends AbstractRESTController {
         } catch (FileNotFoundException e) {
             response.sendError SC_NOT_FOUND
             return
-        } catch (FileAccessDeniedException e) {
+        } catch (AccessDeniedException e) {
             response.sendError SC_FORBIDDEN
             return
         }
@@ -181,4 +186,28 @@ class FilesystemController extends AbstractRESTController {
         return false
     }
 
+    private FileSearchConditions readSearchConditions() {
+        def conditions = new FileSearchConditions()
+
+        conditions.tenant = params.tenant
+        conditions.tag = params.tag?.trim()
+        conditions.owner = params.owner?.trim()
+        conditions.fileName = params.name?.trim()
+        conditions.reference = params.reference?.trim()
+        conditions.classifier = params.classifier?.trim()
+
+        return conditions
+    }
+
+    private Page readPage() {
+        def page = new Page()
+
+        // default page is 1
+        page.page = params.int('page') ?: 1
+
+        // default items per page is 10
+        page.perPage = params.int("items") ?: 10
+
+        return page
+    }
 }

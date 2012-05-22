@@ -1,18 +1,14 @@
 package ca.donlaidlaw.mongo.webfs.service
 
-import com.mongodb.BasicDBObjectBuilder
-import com.mongodb.DB
-import com.mongodb.DBObject
-import com.mongodb.MongoException
 import com.mongodb.gridfs.GridFS
 import com.mongodb.gridfs.GridFSDBFile
 import com.mongodb.gridfs.GridFSFile
 import org.bson.types.ObjectId
 
 import javax.annotation.PostConstruct
-import javax.servlet.http.HttpServletRequest
 
 import ca.donlaidlaw.mongo.webfs.*
+import com.mongodb.*
 
 class FilesystemService {
 
@@ -36,19 +32,25 @@ class FilesystemService {
         final def filesCollection = gridFS.DB.getCollection("${bucket}.files")
 
         filesCollection.ensureIndex(
+                BasicDBObjectBuilder.start("metadata.tenant", 1).get(), "tenant")
+
+        filesCollection.ensureIndex(
+                BasicDBObjectBuilder
+                        .start("metadata.tenant", 1)
+                        .add("metadata.owner", 1).get(),
+                "owner")
+
+        filesCollection.ensureIndex(
                 BasicDBObjectBuilder
                         .start("metadata.tenant", 1)
                         .add("metadata.tags", 1).get(),
                 "tags")
 
         filesCollection.ensureIndex(
-                BasicDBObjectBuilder.start("metadata.tenant", 1).get(), "tenant")
-
-        filesCollection.ensureIndex(
                 BasicDBObjectBuilder
                         .start("metadata.tenant", 1)
                         .add("metadata.references", 1).get(),
-                "related")
+                "references")
     }
 
     // TODO - what if failed to save to database? MongoException?
@@ -112,27 +114,6 @@ class FilesystemService {
     }
 
     /**
-     * Updates the document metadata only.
-     * This method doesn't update a file content or version, also it doesn't update creator and create date information.
-     *
-     * @param docMetadata the document metadata.
-     * @return the document id
-     */
-    def updateFile(FileMetadata metadata, InputStream content) {
-        validateFile(metadata, true)
-
-        GridFSFile gridFile = gridFS.findOne(new ObjectId(metadata.fileId))
-
-        checkFileExists(gridFile, metadata.fileId);
-        checkFileAccess(gridFile, metadata.tenant)
-
-        gridFile = mapper.update(metadata, gridFile)
-        gridFile.save();
-
-        return gridFile;
-    }
-
-    /**
      * Delete file by id.
      *
      * @param fileId the file id.
@@ -167,30 +148,40 @@ class FilesystemService {
         return new WebFSFile(metadata, dbFile.inputStream);
     }
 
-    def findFile(HttpServletRequest request, Map<String, Object> params) {
-        // TODO - implement me
+    def searchFiles(FileSearchConditions conditions, Page page) {
+        if (!conditions.tenant) {
+            throw new AccessDeniedException("tenant is required")
+        }
+
+        def subQueries = [new BasicDBObject("metadata.$FileMetadataMapper.TENANT", conditions.tenant)]
+        if (conditions.fileName) {
+            subQueries << new BasicDBObject(FileMetadataMapper.FILENAME, conditions.fileName)
+        }
+        if (conditions.owner) {
+            subQueries << new BasicDBObject("metadata.$FileMetadataMapper.OWNER", conditions.owner)
+        }
+        if (conditions.tag) {
+            subQueries << new BasicDBObject("metadata.$FileMetadataMapper.TAGS", conditions.tag)
+        }
+        if (conditions.reference) {
+            subQueries << new BasicDBObject("metadata.$FileMetadataMapper.REFERENCES", conditions.reference)
+        }
+        if (conditions.classifier) {
+            subQueries << new BasicDBObject("metadata.$FileMetadataMapper.CLASSIFIER", conditions.classifier)
+        }
+
+        def query = new BasicDBObject('$and', subQueries)
+
+        def filesCollection = db.getCollection("${bucket}.files")
+        def files = filesCollection.find(query).skip((page.page - 1) * page.perPage).limit(page.perPage)
+
+        def results = new Result<FileMetadata>(page: page.page, perPage: page.perPage)
+        results.list = files.collect(mapper.&read)
+
+        return results
     }
 
-    /*def setFileMetadataFromParams(GridFSFile file, Map<String, Object> params, boolean isInsert) {
-        DBObject metadata = file.getMetaData()
-        if (metadata == null) {
-            metadata = new BasicDBObject()
-            file.setMetaData(metadata)
-        }
-        metadata.put(TENANT, params[TENANT])
-        if (isInsert) {
-            if (params[UPLOADED_BY]) metadata.put(UPLOADED_BY, params[UPLOADED_BY])
-        } else {
-            if (params[MODIFIED_BY]) metadata.put(MODIFIED_BY, params[MODIFIED_BY])
-        }
-        metadata.put(CLASSIFIER, params[CLASSIFIER])
-        metadata.put(OWNER, params[OWNER])
-        metadata.put(REFERENCES, params.list(REFERENCES))
-        metadata.put(TAGS, params.list(TAGS))
-    }
-*/
-
-    private void checkFileExists(GridFSDBFile file, String fileId) {
+    private void checkFileExists(GridFSFile file, String fileId) {
         if (!file) {
             throw new FileNotFoundException("File with id $fileId was not found");
         }
