@@ -14,6 +14,9 @@ class FilesystemController extends AbstractRESTController {
 
     FilesystemService filesystemService
 
+    /**
+     * Get file by id or in search.
+     */
     def get() {
         try {
             if (params.id) {
@@ -57,7 +60,7 @@ class FilesystemController extends AbstractRESTController {
 
     /**
      * Will insert a file into the file store.
-     * @return the id of the file as a string.
+     * @return the id of the file as a string and @return 200 if created
      */
     def insert() {
         def metadata = new FileMetadata()
@@ -82,7 +85,7 @@ class FilesystemController extends AbstractRESTController {
 
         try {
             String id = filesystemService.insertFile(metadata, content)
-            render text: id.toString(), status: 200
+            render text: id.toString(), status: SC_SUCCESS
         } catch (EntityValidationException e) {
             renderErrors(metadata)
         } catch (ValidationException e) {
@@ -92,7 +95,7 @@ class FilesystemController extends AbstractRESTController {
 
     /**
      * We only update the metadata, not the file content.
-     * @return the file id if the file was found.
+     * @return 200 if updated, 403 if no access, 404 if file not found.
      */
     def update() {
         def metadata = new FileMetadata()
@@ -120,6 +123,10 @@ class FilesystemController extends AbstractRESTController {
         render status: SC_SUCCESS
     }
 
+    /**
+     * Delete file by id.
+     * @return 200 if removed, 403 if no access, 404 if file not found.
+     */
     def delete() {
         try {
             filesystemService.deleteFile(params.id, params.tenant)

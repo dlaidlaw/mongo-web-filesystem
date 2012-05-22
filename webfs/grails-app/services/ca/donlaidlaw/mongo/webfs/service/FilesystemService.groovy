@@ -53,7 +53,12 @@ class FilesystemService {
                 "references")
     }
 
-    // TODO - what if failed to save to database? MongoException?
+    /**
+     * Inserts new file to the GridFS.
+     * @param metadata a file metadata.
+     * @param content an input stream with new file content.
+     * @return the database id of just added file.
+     */
     String insertFile(FileMetadata metadata, InputStream content) {
         validateFile(metadata)
 
@@ -148,7 +153,15 @@ class FilesystemService {
         return new WebFSFile(metadata, dbFile.inputStream);
     }
 
-    def searchFiles(FileSearchConditions conditions, Page page) {
+    /**
+     * Search files by specified conditions.
+     *
+     * @param conditions the search conditions.
+     * @param page the information about page that need to be retrieved.
+     * @return the list of found files metadata.
+     * @throws AccessDeniedException when tenant is not specified.
+     */
+    Result<FileMetadata> searchFiles(FileSearchConditions conditions, Page page) {
         if (!conditions.tenant) {
             throw new AccessDeniedException("tenant is required")
         }
@@ -171,7 +184,6 @@ class FilesystemService {
         }
 
         def query = new BasicDBObject('$and', subQueries)
-
         def filesCollection = db.getCollection("${bucket}.files")
         def files = filesCollection.find(query).skip((page.page - 1) * page.perPage).limit(page.perPage)
 
