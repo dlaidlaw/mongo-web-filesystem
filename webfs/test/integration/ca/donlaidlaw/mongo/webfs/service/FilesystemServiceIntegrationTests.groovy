@@ -1,17 +1,13 @@
 package ca.donlaidlaw.mongo.webfs.service
 
-import ca.donlaidlaw.mongo.webfs.FileMetadata
-import ca.donlaidlaw.mongo.webfs.ValidationException
 import com.mongodb.BasicDBObject
 import com.mongodb.DB
 import org.bson.types.ObjectId
 import org.junit.Before
 import org.junit.Test
+import ca.donlaidlaw.mongo.webfs.*
 
 import static org.apache.commons.lang.RandomStringUtils.randomAlphabetic
-import ca.donlaidlaw.mongo.webfs.FileNotFoundException
-import ca.donlaidlaw.mongo.webfs.Page
-import ca.donlaidlaw.mongo.webfs.FileSearchConditions
 
 /**
  * Integration tests for {@code FilesystemService}
@@ -116,6 +112,23 @@ class FilesystemServiceIntegrationTests {
         assert results.list.size() == 2
     }
 
+    @Test
+    void testGetFilesWithNoReferences_ResultCorrect() {
+        def content = new ByteArrayInputStream("test content".bytes)
+
+        // page 1
+        filesystemService.insertFile(createTestFileMetadata(), content)
+        def withoutReferenceId = filesystemService.insertFile(createTestFileMetadataWithoutReferences(), content)
+
+        def page = new Page(page: 1, perPage: 5)
+        def conditions = new FileSearchConditions(tenant: TENANT)
+        conditions.emptyReference = true
+        def results = filesystemService.searchFiles(conditions, page)
+
+        assert results.list.size() == 1
+        assert results.list.first().fileId == withoutReferenceId
+    }
+
     // --------------------------------- update metadata
 
     @Test
@@ -156,6 +169,20 @@ class FilesystemServiceIntegrationTests {
                 owner: 'testUser',
                 tags: ["tag1", "tag2"] as Set,
                 references: ["ref1", "ref2"] as Set,
+                note: "test version note"
+        )
+    }
+
+    private FileMetadata createTestFileMetadataWithoutReferences() {
+        new FileMetadata(
+                tenant: TENANT,
+                fileName: randomAlphabetic(10) + '.pdf',
+                fileSize: 12,
+                classifier: 'test type',
+                md5Checksum: null,
+                owner: 'testUser',
+                tags: ["tag1", "tag2"] as Set,
+                references: [] as Set,
                 note: "test version note"
         )
     }

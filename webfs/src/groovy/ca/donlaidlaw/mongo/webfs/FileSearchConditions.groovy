@@ -11,7 +11,9 @@ class FileSearchConditions {
 
     String fileName
     String tag
-    String reference
     String classifier
     String owner
+
+    String reference
+    boolean emptyReference = false
 }

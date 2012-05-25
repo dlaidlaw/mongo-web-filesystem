@@ -40,7 +40,7 @@ class FilesystemControllerFunctionalTests {
     }
 
     @Test
-    void whenInsertFile_thenMetadataReturned() {
+    void whenInsertFile_thenIdReturned() {
         def response = givenWithParams().body("test content").post(testTenantUri)
 
         assert response.asString() != null
@@ -268,7 +268,7 @@ class FilesystemControllerFunctionalTests {
         def addResponse = givenWithParams().body("test content").post(testTenantUri)
         def fileId = addResponse.asString()
 
-        def updateResponse = givenWithUpdateParams().auth().preemptive().basic("test_user", "test_password").put(testTenantUri + "/$fileId")
+        def updateResponse = givenWithUpdateParams().put(testTenantUri + "/$fileId")
 
         assert updateResponse.statusCode == 200
     }

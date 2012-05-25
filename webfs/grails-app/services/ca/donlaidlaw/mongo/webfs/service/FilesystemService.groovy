@@ -179,6 +179,10 @@ class FilesystemService {
         if (conditions.reference) {
             subQueries << new BasicDBObject("metadata.$FileMetadataMapper.REFERENCES", conditions.reference)
         }
+        else if (conditions.emptyReference) {
+            // return only files that haven't references
+            subQueries << new BasicDBObject("metadata.$FileMetadataMapper.REFERENCES", new BasicDBObject('$size', 0))
+        }
         if (conditions.classifier) {
             subQueries << new BasicDBObject("metadata.$FileMetadataMapper.CLASSIFIER", conditions.classifier)
         }
