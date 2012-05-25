@@ -30,7 +30,7 @@ class FilesystemController extends AbstractRESTController {
         }
     }
 
-    private void retrieveFile() {
+    protected void retrieveFile() {
         def file
         try {
             file = filesystemService.getFile(params.tenant, params.id)
@@ -47,7 +47,7 @@ class FilesystemController extends AbstractRESTController {
         response.flushBuffer()
     }
 
-    private void searchFiles() {
+    protected void searchFiles() {
         def searchConditions = readSearchConditions()
         def page = readPage()
         def filesMetadata = filesystemService.searchFiles(searchConditions, page)
@@ -143,7 +143,7 @@ class FilesystemController extends AbstractRESTController {
 
     // helpers
 
-    private def copyMetadataToResponse(FileMetadata metadata) {
+    protected void copyMetadataToResponse(FileMetadata metadata) {
         response.setHeader("WEBFS.ID", metadata.fileId);
         response.setHeader("WEBFS.NAME", metadata.fileName);
         response.setIntHeader("WEBFS.SIZE", metadata.fileSize.intValue());
