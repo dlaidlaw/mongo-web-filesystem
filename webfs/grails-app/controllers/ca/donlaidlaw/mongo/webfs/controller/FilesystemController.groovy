@@ -1,12 +1,14 @@
 package ca.donlaidlaw.mongo.webfs.controller
 
-import ca.donlaidlaw.mongo.webfs.service.FilesystemService
+import ca.donlaidlaw.mongo.webfs.filesystem.FilesystemService
 import grails.converters.JSON
 import grails.converters.XML
 
 import javax.activation.MimeType
 
 import ca.donlaidlaw.mongo.webfs.*
+import ca.donlaidlaw.mongo.webfs.search.Page
+import ca.donlaidlaw.mongo.webfs.search.FileSearchConditions
 
 class FilesystemController extends AbstractRESTController {
 

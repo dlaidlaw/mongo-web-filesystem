@@ -1,4 +1,4 @@
-package ca.donlaidlaw.mongo.webfs
+package ca.donlaidlaw.mongo.webfs.search
 
 /**
  * A simple holder of file search conditions.

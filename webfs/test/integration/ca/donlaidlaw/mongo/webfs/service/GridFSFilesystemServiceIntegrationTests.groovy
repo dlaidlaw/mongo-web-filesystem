@@ -8,17 +8,20 @@ import org.junit.Test
 import ca.donlaidlaw.mongo.webfs.*
 
 import static org.apache.commons.lang.RandomStringUtils.randomAlphabetic
+import ca.donlaidlaw.mongo.webfs.filesystem.GridFSFilesystemService
+import ca.donlaidlaw.mongo.webfs.search.FileSearchConditions
+import ca.donlaidlaw.mongo.webfs.search.Page
 
 /**
  * Integration tests for {@code FilesystemService}
  */
-class FilesystemServiceIntegrationTests {
+class GridFSFilesystemServiceIntegrationTests {
 
     private static final String TENANT = "tenant"
 
     DB db
 
-    FilesystemService filesystemService
+    GridFSFilesystemService filesystemService
 
     @Before
     void setUp() {

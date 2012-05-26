@@ -1,4 +1,4 @@
-package ca.donlaidlaw.mongo.webfs
+package ca.donlaidlaw.mongo.webfs.search
 
 /**
  * The result of search.

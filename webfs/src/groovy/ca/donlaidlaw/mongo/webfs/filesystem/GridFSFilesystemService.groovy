@@ -1,5 +1,9 @@
-package ca.donlaidlaw.mongo.webfs.service
+package ca.donlaidlaw.mongo.webfs.filesystem
 
+import com.mongodb.BasicDBObject
+import com.mongodb.BasicDBObjectBuilder
+import com.mongodb.DBObject
+import com.mongodb.MongoException
 import com.mongodb.gridfs.GridFS
 import com.mongodb.gridfs.GridFSDBFile
 import com.mongodb.gridfs.GridFSFile
@@ -8,24 +12,22 @@ import org.bson.types.ObjectId
 import javax.annotation.PostConstruct
 
 import ca.donlaidlaw.mongo.webfs.*
-import com.mongodb.*
+import ca.donlaidlaw.mongo.webfs.search.Page
+import ca.donlaidlaw.mongo.webfs.search.FileSearchConditions
+import ca.donlaidlaw.mongo.webfs.search.Result
 
-class FilesystemService {
+class GridFSFilesystemService implements FilesystemService {
 
     public static final String TENANT = "tenant";
 
-    /** Database */
-    DB db
     /** GridFS database */
     GridFS gridFS
-
-    String bucket = "fs"
 
     FileMetadataMapper mapper = new FileMetadataMapper()
 
     @PostConstruct
     void init() {
-        gridFS = new GridFS(db, bucket)
+        def bucket = gridFS.bucketName
 
         // add some indexes
 
@@ -53,6 +55,10 @@ class FilesystemService {
                 "references")
     }
 
+    String getBucket() {
+        return gridFS.bucketName
+    }
+
     /**
      * Inserts new file to the GridFS.
      * @param metadata a file metadata.
@@ -64,7 +70,7 @@ class FilesystemService {
 
         GridFSFile gridFile = gridFS.createFile(content, metadata.fileName, false)
         gridFile.contentType = metadata.contentType
-        gridFile = mapper.write(metadata, gridFile)
+        fillMetadata(metadata, gridFile, false)
 
         gridFile.save();
 
@@ -93,18 +99,17 @@ class FilesystemService {
             throw new InvalidMD5ChecksumException()
         }
 
-        // if correct, then update docMetadata MD5 checksum
         metadata.md5Checksum = md5
     }
 
     /**
-     * Updates the document metadata only.
+     * Updates the file metadata only.
      * This method doesn't update a file content or version, also it doesn't update creator and create date information.
      *
-     * @param docMetadata the document metadata.
-     * @return the document id
+     * @param metadata the file metadata.
+     * @return the file id
      */
-    def updateFile(FileMetadata metadata) {
+    void updateFile(FileMetadata metadata) {
         validateFile(metadata, true)
 
         GridFSFile gridFile = gridFS.findOne(new ObjectId(metadata.fileId))
@@ -112,10 +117,8 @@ class FilesystemService {
         checkFileExists(gridFile, metadata.fileId);
         checkFileAccess(gridFile, metadata.tenant)
 
-        gridFile = mapper.update(metadata, gridFile)
+        fillMetadata(metadata, gridFile, true)
         gridFile.save();
-
-        return gridFile;
     }
 
     /**
@@ -135,11 +138,11 @@ class FilesystemService {
     }
 
     /**
-     * Find the document by id.
+     * Find the file by id.
      *
      * @param tenant the tenant.
-     * @param id the document id.
-     * @return the found document information.
+     * @param id the file id.
+     * @return the found file information.
      * @throws FileNotFoundException if specified file was not found
      * @throws FileAccessDeniedException if user has no access to the specified file
      */
@@ -151,6 +154,24 @@ class FilesystemService {
 
         def metadata = mapper.read(dbFile)
         return new WebFSFile(metadata, dbFile.inputStream);
+    }
+
+    /**
+     * Find file metadata by id.
+     *
+     * @param tenant the tenant.
+     * @param id the file id.
+     * @return the found file metadata.
+     * @throws FileNotFoundException if specified file was not found
+     * @throws FileAccessDeniedException if user has no access to the specified file
+     */
+    FileMetadata getFileMetadata(String tenant, String id) {
+        GridFSDBFile dbFile = gridFS.findOne(new ObjectId(id))
+
+        checkFileExists(dbFile, id)
+        checkFileAccess(dbFile, tenant)
+
+        return mapper.read(dbFile)
     }
 
     /**
@@ -166,7 +187,26 @@ class FilesystemService {
             throw new AccessDeniedException("tenant is required")
         }
 
+        BasicDBObject query = buildSearchQuery(conditions)
+        def bucket = gridFS.bucketName
+        def filesCollection = gridFS.DB.getCollection("${bucket}.files")
+        def files = filesCollection.find(query).skip((page.page - 1) * page.perPage).limit(page.perPage)
+        def results = new Result<FileMetadata>(page: page.page, perPage: page.perPage)
+        results.list = files.collect(mapper.&read)
+
+        return results
+    }
+
+    /**
+     * Build a search query.
+     * NOTE: all subqueries are appended under AND clause.
+     *
+     * @param conditions the conditions to build a query.
+     * @return the object that represents a query.
+     */
+    protected BasicDBObject buildSearchQuery(FileSearchConditions conditions) {
         def subQueries = [new BasicDBObject("metadata.$FileMetadataMapper.TENANT", conditions.tenant)]
+
         if (conditions.fileName) {
             subQueries << new BasicDBObject(FileMetadataMapper.FILENAME, conditions.fileName)
         }
@@ -187,23 +227,30 @@ class FilesystemService {
             subQueries << new BasicDBObject("metadata.$FileMetadataMapper.CLASSIFIER", conditions.classifier)
         }
 
-        def query = new BasicDBObject('$and', subQueries)
-        def filesCollection = db.getCollection("${bucket}.files")
-        def files = filesCollection.find(query).skip((page.page - 1) * page.perPage).limit(page.perPage)
-
-        def results = new Result<FileMetadata>(page: page.page, perPage: page.perPage)
-        results.list = files.collect(mapper.&read)
-
-        return results
+        return new BasicDBObject('$and', subQueries)
     }
 
-    private void checkFileExists(GridFSFile file, String fileId) {
+    /**
+     * Check if retrieved file actually exists.
+     *
+     * @param file the GridFS file.
+     * @param fileId the file id.
+     * @throws FileNotFoundException if file not found.
+     */
+    protected void checkFileExists(GridFSFile file, String fileId) {
         if (!file) {
             throw new FileNotFoundException("File with id $fileId was not found");
         }
     }
 
-    private void checkFileAccess(GridFSFile file, String tenant) {
+    /**
+     * Check if user has access to specified file..
+     *
+     * @param file the GridFS file.
+     * @param tenant the current tenant.
+     * @throws FileAccessDeniedException if current tenant has not access to the file.
+     */
+    protected void checkFileAccess(GridFSFile file, String tenant) {
         if (tenant != null && file) {
             DBObject metadata = file.metaData
             if (metadata && tenant.equals(metadata[TENANT])) {
@@ -213,7 +260,7 @@ class FilesystemService {
         throw new FileAccessDeniedException(file.id.toString())
     }
 
-    private void validateFile(FileMetadata metadata, boolean update = false) {
+    protected void validateFile(FileMetadata metadata, boolean update = false) {
         metadata.validate()
 
         /*
@@ -229,40 +276,22 @@ class FilesystemService {
         }
     }
 
-    // TODO - move this functionality to controller
-
-    /*
-      * We will not track versions of files with an auto-increment counter. Versions
-      * will be derived from insert order only. So we can think of the _id of the
-      * file to be a version identifier. The _id is only accurate to the nearest second
-      * for ordering, so maybe use the uploaded date/time instead.
-     def getNextFileVersion(String fileName) {
-         DBCollection coll = db.getCollection("${bucket}.versions")
-         DBObject query = new BasicDBObject("_id", fileName)
-         DBObject sort = null
-         DBObject fields = null
-         DBObject update = new BasicDBObject("\$inc", new BasicDBObject("version", new Long(1)))
- //		findAndModify(com.mongodb.DBObject, com.mongodb.DBObject, com.mongodb.DBObject, boolean, com.mongodb.DBObject, boolean, boolean)
- //		def result = coll.findAndModify(query, fields, sort, Boolean.FALSE, update, Boolean.TRUE, Boolean.TRUE)
-         def result = coll.findAndModify(query, update)
-         if (result == null) {
-             query.put("version", new Long(1))
-             coll.insert(query, WriteConcern.SAFE)
-             return 0L
-         }
-         return result.version;
-     }
+    /**
+     * File GridFS file with metadata on insert or update file.
+     * As there is a limitation when fill metadata on update,
+     * the argument {@code update} should be {@code true} when update metadata.
+     *
+     * @param metadata the file metadata.
+     * @param gridFile the gridFS file.
+     * @param update the flag, true if metadata is filled on update.
      */
+    protected void fillMetadata(FileMetadata metadata, GridFSFile gridFile, boolean update) {
+        if (update) {
+            mapper.update(metadata, gridFile)
+        }
+        else {
+            mapper.write(metadata, gridFile)
+        }
+    }
 
-    /*
-      * We are not trying to emulate a computer filesystem. There are no normalized
-      * file names here. Files may have any string for a name, the interpretation of
-      * a hierarchy, or any other structure of files is up to the user.
-     String makeGridFSFilename(String name) {
-         String filename = name
-         if (!filename.startsWith("/")) filename = root + "/" + filename
-         else filename = root + filename
-         return filename
-     }
-     */
 }
