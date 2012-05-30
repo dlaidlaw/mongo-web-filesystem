@@ -44,8 +44,8 @@ class FileMetadataMapper {
         result.tags = readSetOfStrings((List) fileMetadata.get(TAGS))
         result.note = fileMetadata.get(NOTE)
         result.references = readSetOfStrings((List) fileMetadata.get(REFERENCES))
-        result.uploadedBy = file.get(UPLOADED_BY)
-        result.modifiedBy = file.get(MODIFIED_BY)
+        result.uploadedBy = fileMetadata.get(UPLOADED_BY)
+        result.modifiedBy = fileMetadata.get(MODIFIED_BY)
 
         return result
     }
