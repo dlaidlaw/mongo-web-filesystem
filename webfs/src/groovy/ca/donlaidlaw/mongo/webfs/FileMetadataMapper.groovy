@@ -98,7 +98,6 @@ class FileMetadataMapper {
 
         file.put(FILENAME, fileMetadata.fileName)
 
-        metadata.put(OWNER, fileMetadata.owner)
         metadata.put(MODIFIED_BY, fileMetadata.modifiedBy)
         metadata.put(CLASSIFIER, fileMetadata.classifier)
         metadata.put(TAGS, fileMetadata.tags)

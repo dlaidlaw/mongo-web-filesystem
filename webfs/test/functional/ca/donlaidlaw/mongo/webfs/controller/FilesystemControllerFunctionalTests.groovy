@@ -290,7 +290,7 @@ class FilesystemControllerFunctionalTests {
         assert getResponse.header('WEBFS.SIZE') == "12"
         assert getResponse.header('WEBFS.MD5') != null
         assert getResponse.header('WEBFS.UPLOAD_DATE') != null
-        assert getResponse.header('WEBFS.OWNER') == "updated_test_owner"
+        assert getResponse.header('WEBFS.OWNER') == "test_owner"
 
         assert getResponse.headers.getValues('WEBFS.TAGS').size() == 2
         assert getResponse.headers.getValues('WEBFS.TAGS').containsAll(["updated_tag1", "updated_tag2"])
