@@ -41,11 +41,12 @@ class FilesystemController extends AbstractRESTController {
             return
         }
 
-        response.setHeader("Content-disposition", "attachment; filename=${file.metadata.fileName}")
+        response.setHeader("Content-Disposition", "attachment; filename=${file.metadata.fileName}")
         response.contentType = file.metadata.contentType
+        response.contentLength = file.metadata.fileSize
         copyMetadataToResponse(file.metadata)
 
-        response << file.content
+        response.outputStream << file.content
         response.flushBuffer()
     }
 
