@@ -13,6 +13,7 @@ import ca.donlaidlaw.mongo.webfs.search.FileSearchConditions
 class FilesystemController extends AbstractRESTController {
 
     static allowedMethods = [get: 'GET', insert: 'POST', update: 'PUT', delete: 'DELETE']
+    static validDisposition = ["attachment","inline"]
 
     FilesystemService filesystemService
 
@@ -41,7 +42,7 @@ class FilesystemController extends AbstractRESTController {
             return
         }
 
-        response.setHeader("Content-Disposition", "attachment; filename=${file.metadata.fileName}")
+        response.setHeader("Content-Disposition", "${getValidDisposition(params.contentDisposition)}; filename=${file.metadata.fileName}")
         response.contentType = file.metadata.contentType
         response.contentLength = file.metadata.fileSize
         copyMetadataToResponse(file.metadata)
@@ -72,7 +73,7 @@ class FilesystemController extends AbstractRESTController {
         // custom metadata
         metadata.uploadedBy = request.userPrincipal?.name
 
-        def contentType = request.contentType
+        def contentType = params.contentType ?: request.contentType
         def content
         if (isFileUploaded(contentType)) {
             // This happens if the file is being uploaded with an upload form.
@@ -207,6 +208,10 @@ class FilesystemController extends AbstractRESTController {
         conditions.classifier = params.classifier?.trim()
 
         return conditions
+    }
+
+    private String getValidDisposition(String disposition) {
+        validDisposition.contains(disposition) ? disposition : 'attachment'
     }
 
     private Page readPage() {
