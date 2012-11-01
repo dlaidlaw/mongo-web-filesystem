@@ -78,7 +78,7 @@ class FilesystemController extends AbstractRESTController {
         if (isFileUploaded(contentType)) {
             // This happens if the file is being uploaded with an upload form.
             def uploadFile = request.getFile('upload')
-            metadata.fileName = metadata.fileName ?: uploadFile.originalFileName
+            metadata.fileName = metadata.fileName ?: uploadFile.originalFilename
             metadata.contentType = uploadFile.contentType
             content = uploadFile.inputStream
         } else {
