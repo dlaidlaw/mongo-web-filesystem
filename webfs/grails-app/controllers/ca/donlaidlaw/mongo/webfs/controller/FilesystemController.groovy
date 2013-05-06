@@ -13,7 +13,7 @@ import ca.donlaidlaw.mongo.webfs.search.FileSearchConditions
 class FilesystemController extends AbstractRESTController {
 
     static allowedMethods = [get: 'GET', insert: 'POST', update: 'PUT', delete: 'DELETE']
-    static validDisposition = ["attachment","inline"]
+    private static validDisposition = ["attachment","inline"]
 
     FilesystemService filesystemService
 
